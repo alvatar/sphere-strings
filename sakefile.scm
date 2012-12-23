@@ -1,5 +1,6 @@
 (define modules
   '(char
+    format
     string))
 
 (define-task compile ()
