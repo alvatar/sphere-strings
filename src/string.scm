@@ -111,6 +111,62 @@
 ;;; Enough introductory blather. On to the source code. (But see the end of
 ;;; the file for further notes on porting & performance tuning.)
 
+
+(define-syntax :optional
+  (syntax-rules ()
+    ((:optional rest default-exp)
+     (let ((maybe-arg rest))
+       (cond ((null? maybe-arg) default-exp)
+             ((null? (cdr maybe-arg)) (car maybe-arg))
+             (else (error (string-append
+                           "Too many optional arguments "
+                           (object->string maybe-arg)))))))))
+
+;;! (LET-OPTIONALS* args ((var1 default1) ... [rest]) body1 ...)
+;; This is just like LET-OPTIONALS, except that the DEFAULTi forms
+;; are evaluated in a LET*-style environment. That is, DEFAULT3 is evaluated
+;; within the scope of VAR1 and VAR2, and so forth.
+;;
+;; - If the last form in the ((var1 default1) ...) list is not a 
+;;   (VARi DEFAULTi) pair, but a simple variable REST, then it is
+;;   bound to any left-over values. For example, if we have VAR1 through
+;;   VAR7, and ARGS has 9 values, then REST will be bound to the list of
+;;   the two values of ARGS. If ARGS is too short, causing defaults to
+;;   be used, then REST is bound to '().
+;; - If there is no REST variable, then it is an error to have excess
+;;   values in the ARGS list.
+;; This just interfaces to REALLY-LET-OPTIONALS*, which expects
+;; the ARGS form to be a variable.
+(define-syntax let-optionals*
+  (letrec-syntax
+      ((really-let-optionals*
+        (syntax-rules ()
+          ;; Standard case. Do the first var/default and recurse.
+          ((really-let-optionals* args ((var1 default1 typecheck1 ...) etc ...)
+                                  body1 ...)
+           (call-with-values (lambda () (if (null? args)
+                                       (values default1 '())
+                                       (values (car args) (cdr args))))
+             (lambda (var1 rest)
+               (really-let-optionals* rest (etc ...)
+                                      body1 ...))))
+
+          ;; Single rest arg -- bind to the remaining rest values.
+          ((really-let-optionals* args (rest) body1 ...)
+           (let ((rest args)) body1 ...))
+
+          ;; No more vars. Make sure there are no unaccounted-for values, and
+          ;; do the body.
+          ((really-let-optionals* args () body1 ...)
+           (if (null? args) (begin body1 ...)
+               (error (string-append "Too many optional arguments. "
+                                     (object->string args))))))))
+    (syntax-rules ()
+      ((let-optionals* args vars&defaults body1 ...)
+       (let ((rest args))
+         (really-let-optionals* rest vars&defaults body1 ...))))))
+
+
 ;;; WARNING!!
 ;;; WARNING!! These are defined well-defined for Latin-1 and ASCII, but not for Unicode:
 ;;; WARNING
