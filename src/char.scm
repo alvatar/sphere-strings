@@ -64,8 +64,16 @@
 ;;; - Should be rewritten to use bit strings or byte vecs.
 ;;; - Is Latin-1 specific. Would certainly have to be rewritten for Unicode.
 
+(cond-expand
+ (optimize
+  (declare (standard-bindings) (extended-bindings) (not safe) (block)))
+ (debug
+  (declare (safe) (debug) (debug-location) (debug-source) (debug-environments)))
+ (else (void)))
+
 ;;; See the end of the file for porting and performance-tuning notes.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 ;(define %char->latin1 (lambda(c)
 ;			(let ((i (char->integer c)))

@@ -112,6 +112,14 @@
 ;;; the file for further notes on porting & performance tuning.)
 
 
+(cond-expand
+ (optimize
+  (declare (standard-bindings) (extended-bindings) (not safe) (block)))
+ (debug
+  (declare (safe) (debug) (debug-location) (debug-source) (debug-environments)))
+ (else (void)))
+
+
 (define-syntax :optional
   (syntax-rules ()
     ((:optional rest default-exp)

@@ -1,6 +1,12 @@
-;;!!! String formatting
+;;!!! String formatting: SRFI-28, SRFI-48
 
-(declare (standard-bindings) (extended-bindings) (block))
+(cond-expand
+ (optimize
+  (declare (standard-bindings) (extended-bindings) (not safe) (block)))
+ (debug
+  (declare (safe) (debug) (debug-location) (debug-source) (debug-environments)))
+ (else (void)))
+
 
 ;;!! SRFI-28 Basic Format Strings
 ;; Copyright (C) Scott G. Miller (2002). All Rights Reserved.
