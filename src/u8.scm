@@ -103,29 +103,6 @@
   (declare (safe) (debug) (debug-location) (debug-source) (debug-environments)))
  (else (void)))
 
-(cond-expand
- (black-hole
-  (export u8vector->string
-          utf8-u8vector->string
-          utf8-u8vector-port->string-reader
-          string->u8vector
-          string->utf8-u8vector
-	  substring->utf8-u8vector
-          ISO-8859-1-string->u8vector ISO-8859-1-substring->u8vector
-          u8vector->ISO-8859-1-string subu8vector->ISO-8859-1-string
-          u8vector->hex-string subu8vector->hex-string
-          hex-string->u8vector
-          u8vector-reverse
-          u8vector-invert!
-          dump-u8vector-port
-          u8vector->file
-          file->u8vector
-          write-u8vector
-          apply-u8vector-append
-          u8vector-pad-to-length
-          u8vector-normalize-eol:s
-          u8vector-xor))
- (else (void)))
 
 (define (hex-char->integer c)
   (let ((i (char->integer c)))
@@ -545,50 +522,6 @@
             (if (not (eq? i c))
                 (loop i)))))
       v)))
-
-;; Dump all contents readable from a u8vector port.
-;; target-port = u8vector-port = dump to this port another u8vector port.
-;;               #f = dump to u8vector, returned as return value.
-(define* (dump-u8vector-port source-port (target-port #f))
-  (if (not target-port)
-      (call-with-output-u8vector
-       '()
-       (lambda (target-port)
-         (dump-u8vector-port source-port target-port)))
-
-      (let* ((tmp-bufsize (* 50 1024))
-             (tmp-buffer (make-u8vector tmp-bufsize)))
-        (let loop ()
-          (let ((n (read-subu8vector tmp-buffer 0 tmp-bufsize source-port)))
-            (if (> n 0)
-                (begin
-                  (write-subu8vector tmp-buffer 0 n target-port)
-                  (loop))))))))
-
-(define (u8vector->file u8vector filename)
-  (call-with-output-file `(path: ,filename)
-		       (lambda (port)
-			 (write-subu8vector u8vector 0 (u8vector-length u8vector) port))))
-
-(define (file->u8vector filename)
-  (let ((r (call-with-output-u8vector
-            '()
-            (lambda (write-port)
-              (let ((buf (make-u8vector 10240)))
-                (call-with-input-file `(path: ,filename)
-                  (lambda (port)
-                    (let loop ()
-                      (let ((r (read-subu8vector buf 0 10240 port)))
-                        (write-subu8vector buf 0 r write-port)
-                        (if (< 0 r) (loop)))))))))))
-    r))
-
-(define* (write-u8vector vec (port #f))
-  (write-subu8vector vec
-                     0
-                     (u8vector-length vec)
-                     (or port (current-output-port))))
-
 
 ;;! This procedure normalizes every CR, LF and CR LF to the specified encoding.
 ;; This is quite neat as it effectively autodetects the line encoding of the input.
