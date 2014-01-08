@@ -2,6 +2,8 @@
   '(char
     format
     string))
+(define modules
+  '(u8))
 
 (define-task compile ()
   (for-each (lambda (m)
