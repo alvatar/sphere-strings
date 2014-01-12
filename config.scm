@@ -1,4 +1,6 @@
 (sphere: "strings")
 (dependencies:
- ((= string)
+ (u8
+  (include (core: base-macros)))
+ (string
   (load (= char))))
