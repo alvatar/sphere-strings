@@ -247,9 +247,22 @@
 ;; (x s 0 100 3)
 (define* (utf8-u8vector-port->string-reader port (buffer-size 1024))
   (letrec-syntax
-      ((dbg (syntax-rules ()
-              ((_ . a)
-               (void)))))
+      ((dbg
+        (syntax-rules ()
+          ((_ . a) #!void)))
+       (input:read-byte
+        (rsc-macro-transformer
+         (lambda (form env)
+           '(begin
+              (set! input:read-byte-idx (##fx+ input:read-byte-idx 1))
+              (let ((r (if (##fx> input:read-byte-idx we-have-data-up-to-idx)
+                           (begin
+                             (dbg "(input:read-byte) goes to (input:read-new-data-to-buffer!).")
+                             (input:read-new-data-to-buffer!)
+                             (##u8vector-ref read-buffer 0))
+                           (##u8vector-ref read-buffer input:read-byte-idx))))
+                (dbg "(input:read-byte) returns " r ", is at read buffer idx " input:read-byte-idx ".")
+                r))))))
     (if (not (port? port)) (error "port expected" port))
     (if (not (fixnum? buffer-size)) (error "fixnum buffer size expected" buffer-size))
     ;; Reader-thunk, when invoked, continues its operation forever.
@@ -319,17 +332,6 @@
                                         ; If the writing of the string has been completed, we return immediately, prior to
                                         ; getting into any more reading from the input port.
                       (output:return-result-to-caller&get-read-job)))
-                ;; XXX: This procedure was originally a macro, forcing the code to be inlined
-                (define (input:read-byte)
-                  (set! input:read-byte-idx (##fx+ input:read-byte-idx 1))
-                  (let ((r (if (##fx> input:read-byte-idx we-have-data-up-to-idx)
-                               (begin
-                                 (dbg "(input:read-byte) goes to (input:read-new-data-to-buffer!).")
-                                 (input:read-new-data-to-buffer!)
-                                 (##u8vector-ref read-buffer 0))
-                               (##u8vector-ref read-buffer input:read-byte-idx))))
-                    (dbg "(input:read-byte) returns " r ", is at read buffer idx " input:read-byte-idx ".")
-                    r))
                 (define (output:return-result-to-caller&get-read-job)
                   (let ((read-chars (fx- output:write-idx output:start)))
                     (dbg "Done with filling up this string #" (object->serial-number output:target-string) ", read "
