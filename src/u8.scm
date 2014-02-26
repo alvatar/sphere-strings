@@ -253,7 +253,7 @@
        (input:read-byte
         (rsc-macro-transformer
          (lambda (form env)
-           '(begin
+           `(begin
               (set! input:read-byte-idx (##fx+ input:read-byte-idx 1))
               (let ((r (if (##fx> input:read-byte-idx we-have-data-up-to-idx)
                            (begin
