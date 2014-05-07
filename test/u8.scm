@@ -1,4 +1,4 @@
-(##import energy: testing)
+(##spheres-load energy: testing)
 
 (include "src/u8.scm")
 
