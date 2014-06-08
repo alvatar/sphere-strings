@@ -146,33 +146,41 @@
 ;; This just interfaces to REALLY-LET-OPTIONALS*, which expects
 ;; the ARGS form to be a variable.
 (define-syntax let-optionals*
-  (letrec-syntax
-      ((really-let-optionals*
-        (syntax-rules ()
-          ;; Standard case. Do the first var/default and recurse.
-          ((really-let-optionals* args ((var1 default1 typecheck1 ...) etc ...)
-                                  body1 ...)
-           (call-with-values (lambda () (if (null? args)
-                                       (values default1 '())
-                                       (values (car args) (cdr args))))
-             (lambda (var1 rest)
-               (really-let-optionals* rest (etc ...)
-                                      body1 ...))))
+  (syntax-rules ()
+    ((let-optionals* args vars&defaults body1 ...)
+     (let ((rest args))
+       (really-let-optionals* rest vars&defaults body1 ...)))))
 
-          ;; Single rest arg -- bind to the remaining rest values.
-          ((really-let-optionals* args (rest) body1 ...)
-           (let ((rest args)) body1 ...))
 
-          ;; No more vars. Make sure there are no unaccounted-for values, and
-          ;; do the body.
-          ((really-let-optionals* args () body1 ...)
-           (if (null? args) (begin body1 ...)
-               (error (string-append "Too many optional arguments. "
-                                     (object->string args))))))))
-    (syntax-rules ()
-      ((let-optionals* args vars&defaults body1 ...)
-       (let ((rest args))
-         (really-let-optionals* rest vars&defaults body1 ...))))))
+(define-syntax really-let-optionals*
+  (syntax-rules ()
+    ;; Standard case. Do the first var/default and recurse.
+    ((really-let-optionals* args ((var1 default1 typecheck1 ...) etc ...)
+                            body1 ...)
+     (call-with-values (lambda () (if (null? args)
+                                 (values default1 '())
+                                 (values (car args) (cdr args))))
+       (lambda (var1 rest)
+         (really-let-optionals* rest (etc ...)
+                                body1 ...))))
+
+    ;; Single rest arg -- bind to the remaining rest values.
+    ((really-let-optionals* args (rest) body1 ...)
+     (let ((rest args)) body1 ...))
+
+    ;; No more vars. Make sure there are no unaccounted-for values, and
+    ;; do the body.
+    ((really-let-optionals* args () body1 ...)
+     (if (null? args) (begin body1 ...)
+         (error (string-append "Too many optional arguments. "
+                               (object->string args)))))))
+
+
+
+
+;;------------------------------------------------------------------------------
+
+
 
 
 ;;; WARNING!!
@@ -180,38 +188,6 @@
 ;;; WARNING
 (define (char-cased? c) (char-set-contains? char-set:letter c))
 (define (char-titlecase c) (char-upcase c))
-
-;; let-optionals
-;; Code using this should be refactored to Spheres' optional positional and named parameters
-(define-syntax let-optionals*
-  (letrec-syntax
-      ((really-let-optionals*
-        (syntax-rules ()
-          ;; Standard case. Do the first var/default and recurse.
-          ((really-let-optionals* args ((var1 default1 typecheck1 ...) etc ...)
-                                  body1 ...)
-           (call-with-values (lambda () (if (null? args)
-                                       (values default1 '())
-                                       (values (car args) (cdr args))))
-             (lambda (var1 rest)
-               (really-let-optionals* rest (etc ...)
-                                      body1 ...))))
-
-          ;; Single rest arg -- bind to the remaining rest values.
-          ((really-let-optionals* args (rest) body1 ...)
-           (let ((rest args)) body1 ...))
-
-          ;; No more vars. Make sure there are no unaccounted-for values, and
-          ;; do the body.
-          ((really-let-optionals* args () body1 ...)
-           (if (null? args) (begin body1 ...)
-               (error (string-append "Too many optional arguments. "
-                                     (object->string args))))))))
-    (syntax-rules ()
-      ((let-optionals* args vars&defaults body1 ...)
-       (let ((rest args))
-         (really-let-optionals* rest vars&defaults body1 ...))))))
-
 
 ;;; Support for START/END substring specs
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

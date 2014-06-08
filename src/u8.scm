@@ -246,155 +246,150 @@
 ;; (define s (make-string 100))
 ;; (x s 0 100 3)
 (define* (utf8-u8vector-port->string-reader port (buffer-size 1024))
-  (letrec-syntax
-      ((dbg
-        (syntax-rules ()
-          ((_ . a) #!void)))
-       (input:read-byte
-        (rsc-macro-transformer
-         (lambda (form env)
-           `(begin
-              (set! input:read-byte-idx (##fx+ input:read-byte-idx 1))
-              (let ((r (if (##fx> input:read-byte-idx we-have-data-up-to-idx)
-                           (begin
-                             (dbg "(input:read-byte) goes to (input:read-new-data-to-buffer!).")
-                             (input:read-new-data-to-buffer!)
-                             (##u8vector-ref read-buffer 0))
-                           (##u8vector-ref read-buffer input:read-byte-idx))))
-                (dbg "(input:read-byte) returns " r ", is at read buffer idx " input:read-byte-idx ".")
-                r))))))
-    (if (not (port? port)) (error "port expected" port))
-    (if (not (fixnum? buffer-size)) (error "fixnum buffer size expected" buffer-size))
-    ;; Reader-thunk, when invoked, continues its operation forever.
-    ;;
-    ;; Prior to the first output:get-new-read-operation callback, at least one byte will have been
-    ;; read from port.
-    ;;
-    ;; output:target-string output:start output:end output:need-chars represent the first read operation
-    ;; to be made. output:get-new-read-operation is invoked as soon as this read operation is finished,
-    ;; with the number of bytes read as only argument. Its return value should be a (values) with
-    ;; exactly the same thing as passed as arguments to this procedure in the first place.
-    (let* ((reader-thunk
-            (lambda (output:target-string output:start output:end output:need-chars
-                                     output:get-new-read-operation)
-              (let* ((buffer-size buffer-size) ; 1024)
-                     (read-buffer (make-u8vector buffer-size))
-                     (input:read-byte-idx 0)
-                     (we-have-data-up-to-idx 0))
-                ;; Here's a descriptive example of our reading strategy:
-                ;; If we get a read operation to a string, where 200 chars are needed, start is 0 and end is 400,
-                ;; then when we read-subu8vector , we make a read for the entire buffer size and with need
-                ;; set to 200.
-                ;;
-                ;; The read returns 150. Those 150 bytes are now read into the string as 150 chars. On the first
-                ;; (input:read-byte) where the buffer is depleted, need will be 50. Those 50 bytes are now read
-                ;; into the string as 49 chars. On the first (input:read-byte) after the buffer is depleted,
-                ;; need will be 1. On the read, 10 bytes are read though - and the 3 bytes needed for that
-                ;; UTF-8 char have all been read, and another 7 bytes creating 7 more chars. They're processed,
-                ;; and 207 is returned to the caller.
-                (define (input:read-new-data-to-buffer!)
-                  (let read-again-loop ()
-                    (let* ((output:need-chars-still (fx- output:need-chars (fx- output:write-idx output:start))) ; May be negative
-                           ;; This is the minimum case of one byte per UTF-8 char. Always read at least one byte,
-                           ;; except for if we're reading beyond the chars needed to be read, in this case we
-                           ;; need to read nothing (this is just a check before returning to caller anyhow).
-                           (we-know-we-need-at-least-bytes (if (fx> output:need-chars-still 0)
-                                                               output:need-chars-still
-                                                               0))
-                           (read-bytes (let ((need (fxmin we-know-we-need-at-least-bytes buffer-size)))
-                                         (dbg "Going into read-subu8vector. need = " need)
-                                         (read-subu8vector read-buffer 0 buffer-size port need))))
-                      (dbg "read-subu8vector read " read-bytes " bytes.")
-                      (if (zero? read-bytes)
-                          (begin
-                            (dbg "Read nothing. The only case in which this can happen, is when we have already read all "
-                                 "needed characters and now we're just checking if there's more to read anyhow.")
-                            ;; Internal debug assertion. Comment out when we doublechecked code performs intended task correctly.
-                            (let ((output:need-to-read-up-to-and-incl-idx (fx+ output:start output:need-chars -1)))
-                              (if (not (fx> output:write-idx output:need-to-read-up-to-and-incl-idx))
-                                  (error "Internal inconsistency")))
-                            (output:return-result-to-caller&get-read-job)
-                            (read-again-loop))
-                          (begin
-                            (set! we-have-data-up-to-idx (fx- read-bytes 1))
-                            (set! input:read-byte-idx 0))))))
-                (define output:write-idx 0)
-                (define (output:give-char char-no)
-                  ;; For every target-string we're given to write to, the caller has assured there's at least one
-                  ;; character to be read to it, thus it's safe for us to assume there's space for one char
-                  ;; to be set here. (This layout gives the simplest code layout.)
-                  (##string-set! output:target-string output:write-idx (integer->char char-no))
-                  (dbg "Put read char " (integer->char char-no) " (" char-no ") in output string #"
-                       (object->serial-number output:target-string) " at idx " output:write-idx
-                       " (start " output:start " end " output:end " need-chars " output:need-chars ")")
-                  (set! output:write-idx (##fx+ output:write-idx 1))
-                  (if (fx>= output:write-idx output:end)
+  (define-macro (input:read-byte)
+    `(begin
+       (set! input:read-byte-idx (##fx+ input:read-byte-idx 1))
+       (let ((r (if (##fx> input:read-byte-idx we-have-data-up-to-idx)
+                    (begin
+                      (dbg "(input:read-byte) goes to (input:read-new-data-to-buffer!).")
+                      (input:read-new-data-to-buffer!)
+                      (##u8vector-ref read-buffer 0))
+                    (##u8vector-ref read-buffer input:read-byte-idx))))
+         (dbg "(input:read-byte) returns " r ", is at read buffer idx " input:read-byte-idx ".")
+         r)))
+  (define-macro (dbg . args) #!void)
+  (if (not (port? port)) (error "port expected" port))
+  (if (not (fixnum? buffer-size)) (error "fixnum buffer size expected" buffer-size))
+  ;; Reader-thunk, when invoked, continues its operation forever.
+  ;;
+  ;; Prior to the first output:get-new-read-operation callback, at least one byte will have been
+  ;; read from port.
+  ;;
+  ;; output:target-string output:start output:end output:need-chars represent the first read operation
+  ;; to be made. output:get-new-read-operation is invoked as soon as this read operation is finished,
+  ;; with the number of bytes read as only argument. Its return value should be a (values) with
+  ;; exactly the same thing as passed as arguments to this procedure in the first place.
+  (let* ((reader-thunk
+          (lambda (output:target-string output:start output:end output:need-chars
+                                   output:get-new-read-operation)
+            (let* ((buffer-size buffer-size) ; 1024)
+                   (read-buffer (make-u8vector buffer-size))
+                   (input:read-byte-idx 0)
+                   (we-have-data-up-to-idx 0))
+              ;; Here's a descriptive example of our reading strategy:
+              ;; If we get a read operation to a string, where 200 chars are needed, start is 0 and end is 400,
+              ;; then when we read-subu8vector , we make a read for the entire buffer size and with need
+              ;; set to 200.
+              ;;
+              ;; The read returns 150. Those 150 bytes are now read into the string as 150 chars. On the first
+              ;; (input:read-byte) where the buffer is depleted, need will be 50. Those 50 bytes are now read
+              ;; into the string as 49 chars. On the first (input:read-byte) after the buffer is depleted,
+              ;; need will be 1. On the read, 10 bytes are read though - and the 3 bytes needed for that
+              ;; UTF-8 char have all been read, and another 7 bytes creating 7 more chars. They're processed,
+              ;; and 207 is returned to the caller.
+              (define (input:read-new-data-to-buffer!)
+                (let read-again-loop ()
+                  (let* ((output:need-chars-still (fx- output:need-chars (fx- output:write-idx output:start))) ; May be negative
+                         ;; This is the minimum case of one byte per UTF-8 char. Always read at least one byte,
+                         ;; except for if we're reading beyond the chars needed to be read, in this case we
+                         ;; need to read nothing (this is just a check before returning to caller anyhow).
+                         (we-know-we-need-at-least-bytes (if (fx> output:need-chars-still 0)
+                                                             output:need-chars-still
+                                                             0))
+                         (read-bytes (let ((need (fxmin we-know-we-need-at-least-bytes buffer-size)))
+                                       (dbg "Going into read-subu8vector. need = " need)
+                                       (read-subu8vector read-buffer 0 buffer-size port need))))
+                    (dbg "read-subu8vector read " read-bytes " bytes.")
+                    (if (zero? read-bytes)
+                        (begin
+                          (dbg "Read nothing. The only case in which this can happen, is when we have already read all "
+                               "needed characters and now we're just checking if there's more to read anyhow.")
+                          ;; Internal debug assertion. Comment out when we doublechecked code performs intended task correctly.
+                          (let ((output:need-to-read-up-to-and-incl-idx (fx+ output:start output:need-chars -1)))
+                            (if (not (fx> output:write-idx output:need-to-read-up-to-and-incl-idx))
+                                (error "Internal inconsistency")))
+                          (output:return-result-to-caller&get-read-job)
+                          (read-again-loop))
+                        (begin
+                          (set! we-have-data-up-to-idx (fx- read-bytes 1))
+                          (set! input:read-byte-idx 0))))))
+              (define output:write-idx 0)
+              (define (output:give-char char-no)
+                ;; For every target-string we're given to write to, the caller has assured there's at least one
+                ;; character to be read to it, thus it's safe for us to assume there's space for one char
+                ;; to be set here. (This layout gives the simplest code layout.)
+                (##string-set! output:target-string output:write-idx (integer->char char-no))
+                (dbg "Put read char " (integer->char char-no) " (" char-no ") in output string #"
+                     (object->serial-number output:target-string) " at idx " output:write-idx
+                     " (start " output:start " end " output:end " need-chars " output:need-chars ")")
+                (set! output:write-idx (##fx+ output:write-idx 1))
+                (if (fx>= output:write-idx output:end)
                                         ; If the writing of the string has been completed, we return immediately, prior to
                                         ; getting into any more reading from the input port.
-                      (output:return-result-to-caller&get-read-job)))
-                (define (output:return-result-to-caller&get-read-job)
-                  (let ((read-chars (fx- output:write-idx output:start)))
-                    (dbg "Done with filling up this string #" (object->serial-number output:target-string) ", read "
-                         read-chars " chars, returning to caller."
-                         " (could take " (- output:end output:start) ", needed " output:need-chars ")"
-                         " str: " (substring output:target-string output:start output:write-idx) " /str")
-                    (receive
-                     (target-string start end need-chars get-new-read-operation)
-                     (output:get-new-read-operation read-chars)
-                     (set! output:target-string target-string)
-                     (set! output:start start)
-                     (set! output:end end)
-                     (set! output:need-chars need-chars)
-                     (set! output:write-idx start)
-                     (set! output:get-new-read-operation get-new-read-operation)
-                     (dbg "Got into new read job; target-string is #" (object->serial-number output:target-string)
-                          " start " output:start " end " output:end " need-chars " output:need-chars "."))))
-                ;; Technically what we do here is to read forever.
-                ;; (This continuation is GC:ed at end of use of this procedure.)
-                (dbg "Read loop starts.")
-                (let loop ()
-                  (let ((char-read-no
-                         (let ((b (input:read-byte)))
-                           (if (##fx< b 128)
-                               b
-                               (let ((b2 (input:read-byte)))
-                                 (if (##fx< 191 b 224)
-                                     (##fxior (##fxarithmetic-shift-left (##fxand b 31) 6)
-                                              (##fxand b2 63))
-                                     (let ((b3 (input:read-byte)))
-                                       (##fxior (##fxarithmetic-shift-left (##fxand b  15) 12)
-                                                (##fxarithmetic-shift-left (##fxand b2 31) 6 )
-                                                (##fxand b3 63)))))))))
-                    (dbg "Read char: " (integer->char char-read-no) " (" char-read-no ")")
-                    (output:give-char char-read-no)
-                    (loop))))))
-           (reader-thunk-continuation reader-thunk)
-           (read-chars
-            (lambda (target-string start end need-chars)
-              (call/cc
-               (lambda (return)
-                 (reader-thunk-continuation target-string start end need-chars
-                                            ;; output:get-new-read-operation:
-                                            (lambda (read-bytes)
-                                              (call/cc
-                                               (lambda (continue)
-                                                 (set! reader-thunk-continuation continue)
-                                                 (return read-bytes))))))))))
-      (lambda (target-string start end need)
-        (dbg "Called for target string #" (object->serial-number target-string) " start " start " end " end " need " need)
-        (let* ((reach-for (fx- end start))
-               (need (fxmin reach-for need)))
-          (if (or (fx> 0 start) (fx> 0 end) (fx> 0 reach-for)) (error "Must want at least 0 bytes."))
-          (let ((sl (string-length target-string)))
-            (if (or (fx> (fx+ start need) sl) ; If length is 5, start is 2 and needed is 3, then pos 2 3 4 will be read = ok
-                    (fx< end (fx+ start need))) ; Same calculation as in previous step but with end instead of length.
-                (error "Aimed at reading out of range of target-string")))
-          (if (zero? reach-for)
-              ;; Success - zero characters were read.
-              0
-              ;; From here we know that the reading is to valid positions in string, so we can go with ##string-set! .
-              ;; Furthermore, we know at least one character can be read into the string.
-              (read-chars target-string start end need)))))))
+                    (output:return-result-to-caller&get-read-job)))
+              (define (output:return-result-to-caller&get-read-job)
+                (let ((read-chars (fx- output:write-idx output:start)))
+                  (dbg "Done with filling up this string #" (object->serial-number output:target-string) ", read "
+                       read-chars " chars, returning to caller."
+                       " (could take " (- output:end output:start) ", needed " output:need-chars ")"
+                       " str: " (substring output:target-string output:start output:write-idx) " /str")
+                  (receive
+                   (target-string start end need-chars get-new-read-operation)
+                   (output:get-new-read-operation read-chars)
+                   (set! output:target-string target-string)
+                   (set! output:start start)
+                   (set! output:end end)
+                   (set! output:need-chars need-chars)
+                   (set! output:write-idx start)
+                   (set! output:get-new-read-operation get-new-read-operation)
+                   (dbg "Got into new read job; target-string is #" (object->serial-number output:target-string)
+                        " start " output:start " end " output:end " need-chars " output:need-chars "."))))
+              ;; Technically what we do here is to read forever.
+              ;; (This continuation is GC:ed at end of use of this procedure.)
+              (dbg "Read loop starts.")
+              (let loop ()
+                (let ((char-read-no
+                       (let ((b (input:read-byte)))
+                         (if (##fx< b 128)
+                             b
+                             (let ((b2 (input:read-byte)))
+                               (if (##fx< 191 b 224)
+                                   (##fxior (##fxarithmetic-shift-left (##fxand b 31) 6)
+                                            (##fxand b2 63))
+                                   (let ((b3 (input:read-byte)))
+                                     (##fxior (##fxarithmetic-shift-left (##fxand b  15) 12)
+                                              (##fxarithmetic-shift-left (##fxand b2 31) 6 )
+                                              (##fxand b3 63)))))))))
+                  (dbg "Read char: " (integer->char char-read-no) " (" char-read-no ")")
+                  (output:give-char char-read-no)
+                  (loop))))))
+         (reader-thunk-continuation reader-thunk)
+         (read-chars
+          (lambda (target-string start end need-chars)
+            (call/cc
+             (lambda (return)
+               (reader-thunk-continuation target-string start end need-chars
+                                          ;; output:get-new-read-operation:
+                                          (lambda (read-bytes)
+                                            (call/cc
+                                             (lambda (continue)
+                                               (set! reader-thunk-continuation continue)
+                                               (return read-bytes))))))))))
+    (lambda (target-string start end need)
+      (dbg "Called for target string #" (object->serial-number target-string) " start " start " end " end " need " need)
+      (let* ((reach-for (fx- end start))
+             (need (fxmin reach-for need)))
+        (if (or (fx> 0 start) (fx> 0 end) (fx> 0 reach-for)) (error "Must want at least 0 bytes."))
+        (let ((sl (string-length target-string)))
+          (if (or (fx> (fx+ start need) sl) ; If length is 5, start is 2 and needed is 3, then pos 2 3 4 will be read = ok
+                  (fx< end (fx+ start need))) ; Same calculation as in previous step but with end instead of length.
+              (error "Aimed at reading out of range of target-string")))
+        (if (zero? reach-for)
+            ;; Success - zero characters were read.
+            0
+            ;; From here we know that the reading is to valid positions in string, so we can go with ##string-set! .
+            ;; Furthermore, we know at least one character can be read into the string.
+            (read-chars target-string start end need))))))
 
 
 ;;!! Transform an encoded u8vector into a string
